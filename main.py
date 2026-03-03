@@ -47,13 +47,19 @@ def main(page: ft.Page):
             for fname in [DB_NAME, USUARIOS_NAME]:
                 dest = os.path.join(BASE_DIR, fname)
                 if not os.path.exists(dest):
-                    try:
-                        # Buscamos en assets/ que es donde Flet pone los archivos al compilar
-                        src = os.path.join("assets", fname)
-                        if os.path.exists(src):
-                            shutil.copy(src, dest)
-                    except:
-                        pass
+                    # Intentamos varias rutas posibles donde Flet guarda assets en Android
+                    posibles_origenes = [
+                        os.path.join(os.getcwd(), "assets", fname),
+                        os.path.join("assets", fname),
+                        fname
+                    ]
+                    for src in posibles_origenes:
+                        try:
+                            if os.path.exists(src):
+                                shutil.copy(src, dest)
+                                break
+                        except:
+                            pass
 
     init_files()
 
@@ -102,6 +108,7 @@ def main(page: ft.Page):
             print(f"Error guardando Excel: {e}")
 
     # --- COMPONENTES GLOBALES ---
+    # Lo inicializamos dentro de las funciones si es necesario para evitar errores de carga inicial
     file_picker = ft.FilePicker()
     page.overlay.append(file_picker)
 
@@ -144,16 +151,16 @@ def main(page: ft.Page):
         page.add(
             ft.Column([
                 ft.Container(height=40),
-                ft.Image(src="assets/logo_ceva.png", width=180),
+                ft.Image(src="logo_ceva.png", width=180),
                 ft.Container(height=20),
-                ft.Image(src="assets/foto_camiones.jpg", width=350, border_radius=10),
+                ft.Image(src="foto_camiones.jpg", width=350, border_radius=10),
                 ft.Container(height=20),
                 ft.Text("Acceso al Sistema", size=24, weight="bold", color=COLOR_AZUL_CEVA),
                 dd_user,
                 dd_model,
                 ft.ElevatedButton("INGRESAR", bgcolor=COLOR_AZUL_CEVA, color="white", width=250, height=50, on_click=login_click),
                 ft.Container(height=20),
-                ft.Image(src="assets/logo_vw.png", width=60)
+                ft.Image(src="logo_vw.png", width=60)
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         )
 
