@@ -108,9 +108,9 @@ def main(page: ft.Page):
             print(f"Error guardando Excel: {e}")
 
     # --- COMPONENTES GLOBALES ---
-    # Lo inicializamos dentro de las funciones si es necesario para evitar errores de carga inicial
-    file_picker = ft.FilePicker()
-    page.overlay.append(file_picker)
+    # COMENTADO TEMPORALMENTE PARA DEPURAR PANTALLA ROJA
+    # file_picker = ft.FilePicker()
+    # page.overlay.append(file_picker)
 
     # --- PANTALLAS ---
 
@@ -199,15 +199,18 @@ def main(page: ft.Page):
         txt_qr.on_change = on_qr_change
 
         def pick_file(target):
-            def handle_result(e):
-                if e.files:
-                    if target == "BOX": state.ruta_foto_box = e.files[0].path
-                    else: state.ruta_foto_lista = e.files[0].path
-                    page.snack_bar = ft.SnackBar(ft.Text(f"Foto {target} capturada"))
-                    page.snack_bar.open = True
-                    page.update()
-            file_picker.on_result = handle_result
-            file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
+            # def handle_result(e):
+            #     if e.files:
+            #         if target == "BOX": state.ruta_foto_box = e.files[0].path
+            #         else: state.ruta_foto_lista = e.files[0].path
+            #         page.snack_bar = ft.SnackBar(ft.Text(f"Foto {target} capturada"))
+            #         page.snack_bar.open = True
+            #         page.update()
+            # file_picker.on_result = handle_result
+            # file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
+            page.snack_bar = ft.SnackBar(ft.Text("Módulo de cámara desactivado por depuración"))
+            page.snack_bar.open = True
+            page.update()
 
         btn_start.on_click = lambda _: [setattr(state, "reporte_id", f"REP-{datetime.now().strftime('%y%m%d%H%M')}"), show_validation()]
 
