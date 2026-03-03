@@ -56,10 +56,13 @@ def main(page: ft.Page):
                     for src in posibles_origenes:
                         try:
                             if os.path.exists(src):
+                                print(f"DEBUG: Archivo {fname} encontrado en {src}. Copiando...")
                                 shutil.copy(src, dest)
                                 break
-                        except:
-                            pass
+                        except Exception as ex:
+                            print(f"DEBUG: Error copiando {fname} desde {src}: {ex}")
+        else:
+            print("DEBUG: Entorno PC detectado.")
 
     init_files()
 
@@ -139,14 +142,14 @@ def main(page: ft.Page):
         dd_model = ft.Dropdown(label="Modelo", options=[ft.dropdown.Option(m) for m in modelos], width=300)
 
         def login_click(e):
-            if dd_user.value and dd_model.value:
-                state.usuario = dd_user.value
-                state.modelo = dd_model.value
-                show_setup()
-            else:
-                page.snack_bar = ft.SnackBar(ft.Text("Seleccione Usuario y Modelo"))
-                page.snack_bar.open = True
-                page.update()
+            # Bypass para depuración: Si no hay selección, usamos valores por defecto
+            u = dd_user.value if dd_user.value else "Usuario_Debug"
+            m = dd_model.value if dd_model.value else "Modelo_Debug"
+            
+            print(f"DEBUG: Intento de login con {u} / {m}")
+            state.usuario = u
+            state.modelo = m
+            show_setup()
 
         page.add(
             ft.Column([
