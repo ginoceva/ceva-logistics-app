@@ -41,28 +41,47 @@ def main(page: ft.Page):
     page.bgcolor = COLOR_FONDO
     page.scroll = ft.ScrollMode.ADAPTIVE
 
+    # --- SISTEMA DE LOGS VISUALES ---
+    class Logger:
+        def __init__(self):
+            self.lines = []
+            self.control = ft.Column(scroll=ft.ScrollMode.ALWAYS, height=100)
+        def log(self, text):
+            msg = f"[{datetime.now().strftime('%H:%M:%S')}] {text}"
+            self.lines.append(msg)
+            self.control.controls.append(ft.Text(msg, size=10, font_family="monospace"))
+            print(msg)
+    
+    logger = Logger()
+
     # --- INICIALIZACIÓN DE ARCHIVOS (Solo en Android) ---
     def init_files():
+        logger.log(f"Iniciando init_files. BASE_DIR: {BASE_DIR}")
         if os.environ.get("ANDROID_ARGUMENT") or os.environ.get("ANDROID_ROOT"):
+            logger.log("Entorno ANDROID detectado.")
             for fname in [DB_NAME, USUARIOS_NAME]:
                 dest = os.path.join(BASE_DIR, fname)
                 if not os.path.exists(dest):
-                    # Intentamos varias rutas posibles donde Flet guarda assets en Android
-                    posibles_origenes = [
+                    # Intentamos varias rutas posibles en Android
+                    posibles = [
                         os.path.join(os.getcwd(), "assets", fname),
-                        os.path.join("assets", fname),
+                        os.path.join(os.path.dirname(__file__), "assets", fname),
+                        os.path.join(".", "assets", fname),
+                        os.path.join("/data/user/0/com.ceva.logistics/app/assets", fname),
                         fname
                     ]
-                    for src in posibles_origenes:
+                    for src in posibles:
                         try:
                             if os.path.exists(src):
-                                print(f"DEBUG: Archivo {fname} encontrado en {src}. Copiando...")
+                                logger.log(f"Copiando {fname} desde {src}")
                                 shutil.copy(src, dest)
                                 break
-                        except Exception as ex:
-                            print(f"DEBUG: Error copiando {fname} desde {src}: {ex}")
+                        except Exception as e:
+                            logger.log(f"Error {fname} en {src}: {e}")
+                else:
+                    logger.log(f"Archivo {fname} ya existe en destino.")
         else:
-            print("DEBUG: Entorno PC detectado.")
+            logger.log("Entorno PC detectado.")
 
     init_files()
 
@@ -163,7 +182,10 @@ def main(page: ft.Page):
                 dd_model,
                 ft.ElevatedButton("INGRESAR", bgcolor=COLOR_AZUL_CEVA, color="white", width=250, height=50, on_click=login_click),
                 ft.Container(height=20),
-                ft.Image(src="logo_vw.png", width=60)
+                ft.Image(src="logo_vw.png", width=60),
+                ft.Divider(),
+                ft.Text("DEBUG LOGS:", size=10, weight="bold"),
+                ft.Container(content=logger.control, bgcolor=ft.Colors.BLACK12, padding=5, border_radius=5)
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         )
 
