@@ -181,11 +181,23 @@ def main(page: ft.Page):
         dd_model = ft.Dropdown(label="Modelo", options=[ft.dropdown.Option(m) for m in modelos], width=300)
 
         def login_click(e):
-            # Bypass para depuración: Si no hay selección, usamos valores por defecto
-            u = dd_user.value if dd_user.value else "Usuario_Debug"
-            m = dd_model.value if dd_model.value else "Modelo_Debug"
+            # Bypass para depuración: Si no hay selección, usamos valores por defecto o el primero del DB
+            u = dd_user.value if dd_user.value else "Login_Bypass"
             
-            print(f"DEBUG: Intento de login con {u} / {m}")
+            m = dd_model.value
+            if not m:
+                # Intentamos sacar el primer modelo real de la base de datos si existe
+                try:
+                    if os.path.exists(DB_PATH):
+                        conn = sqlite3.connect(DB_PATH)
+                        res = conn.execute("SELECT DISTINCT ModeloCamion FROM piezas LIMIT 1").fetchone()
+                        conn.close()
+                        if res: m = res[0]
+                except: pass
+            
+            if not m: m = "Modelo_Debug"
+            
+            logger.log(f"Login Bypass: {u} / {m}")
             state.usuario = u
             state.modelo = m
             show_setup()
@@ -224,19 +236,24 @@ def main(page: ft.Page):
                 state.box = box
                 # Consultar DB
                 try:
-                    conn = sqlite3.connect(DB_PATH)
-                    res = conn.execute("SELECT Material, Medio FROM piezas WHERE ModeloCamion=? AND BOX=?", (state.modelo, box)).fetchall()
-                    conn.close()
-                    state.piezas_teoricas = res
-                    if res:
-                        lbl_status.value = f"Piezas encontradas: {len(res)}"
-                        lbl_status.color = "green"
-                        btn_start.disabled = False
+                    logger.log(f"Consultando DB para Modelo: {state.modelo}, BOX: {box}")
+                    if not os.path.exists(DB_PATH):
+                        logger.log(f"ERROR: No existe DB en {DB_PATH}")
                     else:
-                        lbl_status.value = "⚠️ No se encontraron piezas para este BOX"
-                        lbl_status.color = "orange"
-                        btn_start.disabled = True
-                except:
+                        conn = sqlite3.connect(DB_PATH)
+                        res = conn.execute("SELECT Material, Medio FROM piezas WHERE ModeloCamion=? AND BOX=?", (state.modelo, box)).fetchall()
+                        conn.close()
+                        state.piezas_teoricas = res
+                        if res:
+                            lbl_status.value = f"Piezas encontradas: {len(res)}"
+                            lbl_status.color = "green"
+                            btn_start.disabled = False
+                        else:
+                            lbl_status.value = f"⚠️ 0 piezas (Modelo {state.modelo} no coincidio?)"
+                            lbl_status.color = "orange"
+                            btn_start.disabled = True
+                except Exception as ex:
+                    logger.log(f"Error DB: {ex}")
                     lbl_status.value = "Error al consultar Base de Datos"
                     lbl_status.color = "red"
             page.update()
