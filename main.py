@@ -18,10 +18,14 @@ COLOR_FONDO = "#F5F7FA"
 def get_base_dir():
     # Detectamos si estamos en Android
     if os.environ.get("ANDROID_ARGUMENT") or os.environ.get("ANDROID_ROOT"):
-        # En Android, usamos la carpeta interna de la app para asegurar permisos de escritura
-        return os.path.expanduser("~")
+        # El directorio estándar para datos de la app en Android es FILES_DIR
+        # Si no existe, usamos el actual pero expandiendo a una ruta escribible
+        p = os.environ.get("FILES_DIR", os.getcwd())
+        if p == "/" or p == "/data":
+             # Intento forzar una ruta común si las variables fallan
+             return "/data/user/0/com.ceva.logistics/files"
+        return p
     else:
-        # En PC (Desarrollo), usamos la carpeta del script
         return os.path.dirname(os.path.abspath(__file__))
 
 BASE_DIR = get_base_dir()
@@ -57,31 +61,47 @@ def main(page: ft.Page):
     # --- INICIALIZACIÓN DE ARCHIVOS (Solo en Android) ---
     def init_files():
         logger.log(f"Iniciando init_files. BASE_DIR: {BASE_DIR}")
+        logger.log(f"CWD inicial: {os.getcwd()}")
+        
+        # Si BASE_DIR no es escribible, intentamos crearlo
+        if not os.path.exists(BASE_DIR):
+            try:
+                os.makedirs(BASE_DIR, exist_ok=True)
+                logger.log(f"Directorio BASE_DIR creado: {BASE_DIR}")
+            except Exception as e:
+                logger.log(f"ERROR creando BASE_DIR: {e}")
+
         if os.environ.get("ANDROID_ARGUMENT") or os.environ.get("ANDROID_ROOT"):
             logger.log("Entorno ANDROID detectado.")
             for fname in [DB_NAME, USUARIOS_NAME]:
                 dest = os.path.join(BASE_DIR, fname)
                 if not os.path.exists(dest):
-                    # Intentamos varias rutas posibles en Android
+                    # Intentamos buscar los assets en varias ubicaciones
                     posibles = [
+                        os.path.join(os.getcwd(), fname),
                         os.path.join(os.getcwd(), "assets", fname),
+                        os.path.join(os.path.dirname(__file__), fname),
                         os.path.join(os.path.dirname(__file__), "assets", fname),
-                        os.path.join(".", "assets", fname),
-                        os.path.join("/data/user/0/com.ceva.logistics/app/assets", fname),
-                        fname
+                        os.path.join("/app", fname), # Algunos entornos Flet usan /app
+                        os.path.join("/app/assets", fname)
                     ]
+                    encontrado = False
                     for src in posibles:
                         try:
                             if os.path.exists(src):
-                                logger.log(f"Copiando {fname} desde {src}")
+                                logger.log(f"INFO: Encontrado {fname} en {src}. Copiando a {dest}")
                                 shutil.copy(src, dest)
+                                encontrado = True
                                 break
                         except Exception as e:
-                            logger.log(f"Error {fname} en {src}: {e}")
+                            logger.log(f"ERR: Falló copia {fname} desde {src}: {e}")
+                    
+                    if not encontrado:
+                        logger.log(f"¡ADVERTENCIA! No se encontró el origen para {fname}")
                 else:
-                    logger.log(f"Archivo {fname} ya existe en destino.")
+                    logger.log(f"OK: {fname} ya existe en {dest}")
         else:
-            logger.log("Entorno PC detectado.")
+            logger.log("INFO: Entorno PC detectado.")
 
     init_files()
 
