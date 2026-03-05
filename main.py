@@ -7,7 +7,7 @@ from datetime import datetime
 import requests
 
 # --- CONFIGURACIÓN ---
-# Update: Triggering build #20
+# Update: Triggering license fix (Build #24)
 DB_NAME = "datos_logistica.db"
 USUARIOS_NAME = "Usuarios.xlsx"
 MASTER_NAME = "Listados maestro EMBALAJES de camiones.xlsx"
