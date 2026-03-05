@@ -31,16 +31,20 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.2' # Versión estable recomendada para Flet 0.23
+          flutter-version: '3.41.4' # Version requested by flet-cli 0.82.0
           channel: 'stable'
 
       - name: Accept Android Licenses
-        run: yes | sdkmanager --licenses || true
+        run: |
+          yes | flutter doctor --android-licenses || true
+          yes | sdkmanager --licenses || true
 
       - name: Build APK
+        env:
+          PYTHONIOENCODING: utf-8
         run: |
-          # Usamos 'yes |' para responder automáticamente a cualquier aviso de versión de Flutter
-          yes | flet build apk --project "CEVA_Flow" --org "com.ceva.logistics" --verbose
+          # Usamos 'yes |' por si acaso, aunque licenciando antes debería ir fluido
+          yes | flet build apk --project "CEVA_Flow" --org "com.ceva.logistics"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
