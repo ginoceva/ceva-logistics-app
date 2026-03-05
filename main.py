@@ -264,3 +264,4 @@ def main(page: ft.Page):
     show_login()
 
 ft.app(target=main, assets_dir="assets")
+# Trigger Build #33 - Force push for GitHub Actions
