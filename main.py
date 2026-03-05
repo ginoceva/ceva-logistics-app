@@ -111,13 +111,37 @@ def main(page: ft.Page):
 
     def load_manifest(modelo):
         try:
-            df = pd.read_excel(MASTER_PATH, sheet_name=modelo)
+            logger.log(f"Leyendo: {modelo}")
+            # Leemos sin encabezados primero para encontrar la fila real
+            df_raw = pd.read_excel(MASTER_PATH, sheet_name=modelo, header=None)
+            
+            header_idx = 0
+            for i, row in df_raw.head(10).iterrows():
+                if any("Materialnumber" in str(val) for val in row.values):
+                    header_idx = i
+                    break
+            
+            # Recargamos con la fila correcta
+            df = pd.read_excel(MASTER_PATH, sheet_name=modelo, header=header_idx)
+            
+            # Mapeo flexible de columnas (minúsculas y sin espacios)
+            cols = {str(c).lower().strip(): c for c in df.columns}
+            c_mat = cols.get("materialnumber")
+            c_medio = cols.get("medio de abastecimiento")
+            c_emb = cols.get("embalaje proveedor")
+            
             piezas = []
             for _, row in df.iterrows():
-                mat = str(row.get('Materialnumber', ''))[:15]
-                medio = str(row.get('Medio de Abastecimiento', ''))
-                if mat and mat != 'nan' and mat != '':
-                    piezas.append((mat, medio, "", ""))
+                mat = str(row.get(c_mat, '')) if c_mat else ""
+                medio = str(row.get(c_medio, '')) if c_medio else ""
+                emb = str(row.get(c_emb, '')) if c_emb else ""
+                
+                # Limpieza
+                mat = mat.strip()
+                if mat and mat.lower() != 'nan' and mat != 'None':
+                    piezas.append((mat[:15], medio, "", emb))
+            
+            logger.log(f"Cargadas {len(piezas)} piezas")
             return piezas
         except Exception as e:
             logger.log(f"ERR manifest: {e}")
