@@ -201,7 +201,7 @@ def main(page: ft.Page):
                 ft.Column([
                     ft.Container(
                         content=ft.Text("DETALLE DE CARGA", color="white", weight="bold"),
-                        bgcolor=COLOR_AZUL_CEVA, padding=12, border_radius=5, alignment=ft.alignment.center, expand=True
+                        bgcolor=COLOR_AZUL_CEVA, padding=12, border_radius=5, alignment=ft.Alignment(0, 0)
                     ),
                     ft.Column([
                         txt_semana,
