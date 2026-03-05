@@ -152,19 +152,83 @@ def main(page: ft.Page):
     def show_setup():
         page.clean()
         page.add(logger.ui)
+        logger.log(f"Cargando {state.modelo}...")
         state.piezas_teoricas = load_manifest(state.modelo)
         
+        # Campos solicitados
+        txt_semana = ft.TextField(label="Semana (QR)", width=300, bgcolor="white")
+        txt_truck = ft.TextField(label="Truck (Cod. barras)", width=300, bgcolor="white")
+        txt_secuencia = ft.TextField(label="Nro de Secuencia/Camión", width=300, bgcolor="white")
+        txt_hu = ft.TextField(label="HU", width=300, bgcolor="white")
+
+        lbl_box_status = ft.Text("Box no cargado", color="red", size=12)
+
         table = ft.DataTable(
-            columns=[ft.DataColumn(ft.Text("MAT")), ft.DataColumn(ft.Text("MEDIO"))],
-            rows=[ft.DataRow(cells=[ft.DataCell(ft.Text(p[0])), ft.DataCell(ft.Text(p[1]))]) for p in state.piezas_teoricas[:5]]
+            columns=[
+                ft.DataColumn(ft.Text("EMB")),
+                ft.DataColumn(ft.Text("MAT")),
+                ft.DataColumn(ft.Text("MEDIO")),
+            ],
+            rows=[
+                ft.DataRow(cells=[
+                    ft.DataCell(ft.Text(str(p[3]))),
+                    ft.DataCell(ft.Text(str(p[0]))),
+                    ft.DataCell(ft.Text(str(p[1]))),
+                ]) for p in state.piezas_teoricas[:8]
+            ],
+            column_spacing=10,
+            data_row_min_height=30,
         )
+
+        def start_click(e):
+            state.truck = txt_truck.value
+            state.nro_camion = txt_secuencia.value
+            state.hu = txt_hu.value
+            show_validation()
 
         page.add(
             ft.Column([
-                ft.Text(f"Config: {state.modelo}", weight="bold"),
-                table,
-                ft.ElevatedButton("Siguiente", on_click=lambda _: show_validation(), bgcolor="red", color="white")
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                ft.Container(
+                    content=ft.Text("DETALLE DE CARGA", color="white", weight="bold"),
+                    bgcolor=COLOR_AZUL_CEVA, padding=10, width=page.width
+                ),
+                ft.Column([
+                    txt_semana,
+                    txt_truck,
+                    txt_secuencia,
+                ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                
+                ft.Text("EMBALAJE DE ORIGEN", weight="bold", color=COLOR_AZUL_CEVA),
+                ft.Row([ft.Text("HU:"), txt_hu], alignment=ft.MainAxisAlignment.CENTER),
+                
+                ft.Container(
+                    content=ft.Column([table], scroll=ft.ScrollMode.ALWAYS),
+                    height=180, border=ft.border.all(1, ft.colors.BLACK12), border_radius=5
+                ),
+
+                ft.Row([
+                    ft.Column([
+                        ft.ElevatedButton("Foto BOX", icon=ft.icons.CAMERA_ALT, on_click=lambda _: None),
+                        lbl_box_status,
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.ElevatedButton("Foto Lista", icon=ft.icons.CAMERA_ALT),
+                ], alignment=ft.MainAxisAlignment.CENTER),
+
+                ft.Container(
+                    content=ft.Row([
+                        ft.Column([
+                            ft.Text("Piezas Total", size=10, color="white"),
+                            ft.Text(str(len(state.piezas_teoricas)), size=20, weight="bold", color="white")
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                        ft.ElevatedButton(
+                            "Comenzar la verificación", bgcolor="red", color="white",
+                            height=50, on_click=start_click
+                        )
+                    ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
+                    bgcolor=COLOR_AZUL_CEVA, padding=10, border_radius=10
+                ),
+                ft.IconButton(ft.icons.HOME, on_click=lambda _: show_login())
+            ], spacing=10, scroll=ft.ScrollMode.AUTO, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         )
 
     def show_validation():
