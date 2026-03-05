@@ -46,7 +46,7 @@ def main(page: ft.Page):
         return
 
     page.title = "CEVA Flow"
-    page.theme_mode = ft.ThemeMode.LIGHT
+    page.theme_mode = "light"
     page.padding = 0
     page.bgcolor = COLOR_FONDO
 
@@ -146,7 +146,7 @@ def main(page: ft.Page):
                 ft.Text("Login", weight="bold", size=20),
                 dd_user, dd_model,
                 ft.ElevatedButton("Ingresar", bgcolor=COLOR_AZUL_CEVA, color="white", on_click=login_click, width=200)
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            ], horizontal_alignment="center")
         )
 
     def show_setup():
@@ -207,40 +207,40 @@ def main(page: ft.Page):
                         txt_semana,
                         txt_truck,
                         txt_secuencia,
-                    ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    ], spacing=8, horizontal_alignment="center"),
                     
                     ft.Text("EMBALAJE DE ORIGEN", weight="bold", color=COLOR_AZUL_CEVA, size=14),
-                    ft.Row([ft.Text("HU:"), txt_hu], alignment=ft.MainAxisAlignment.CENTER),
+                    ft.Row([ft.Text("HU:"), txt_hu], alignment="center"),
                     
                     ft.Container(
-                        content=ft.Column([table], scroll=ft.ScrollMode.ALWAYS),
-                        height=200, border=ft.border.all(1, ft.colors.BLACK12), border_radius=8, bgcolor="white"
+                        content=ft.Column([table], scroll="always"),
+                        height=200, border=ft.border.all(1, "black12"), border_radius=8, bgcolor="white"
                     ),
 
                     ft.Row([
                         ft.Column([
-                            ft.ElevatedButton("Foto BOX", icon=ft.icons.CAMERA_ALT, bgcolor=COLOR_AZUL_CEVA, color="white"),
+                            ft.ElevatedButton("Foto BOX", icon="camera_alt", bgcolor=COLOR_AZUL_CEVA, color="white"),
                             lbl_box_status,
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        ft.ElevatedButton("Foto Lista", icon=ft.icons.CAMERA_ALT, bgcolor=COLOR_AZUL_CEVA, color="white"),
-                    ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
+                        ], horizontal_alignment="center"),
+                        ft.ElevatedButton("Foto Lista", icon="camera_alt", bgcolor=COLOR_AZUL_CEVA, color="white"),
+                    ], alignment="center", spacing=20),
 
                     ft.Container(
                         content=ft.Row([
                             ft.Column([
                                 ft.Text("PIEZAS", size=9, color="white"),
                                 ft.Text(str(len(state.piezas_teoricas)), size=18, weight="bold", color="white")
-                            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                            ], horizontal_alignment="center"),
                             ft.ElevatedButton(
                                 "COMENZAR", bgcolor="red", color="white",
                                 height=45, width=150, on_click=start_click,
                                 style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))
                             )
-                        ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
+                        ], alignment="spaceAround"),
                         bgcolor=COLOR_AZUL_CEVA, padding=12, border_radius=12
                     ),
-                    ft.IconButton(ft.icons.ARROW_BACK, on_click=lambda _: show_login())
-                ], spacing=12, scroll=ft.ScrollMode.AUTO, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                    ft.IconButton("arrow_back", on_click=lambda _: show_login())
+                ], spacing=12, scroll="auto", horizontal_alignment="center")
             )
             logger.log("Setup UI cargada OK")
         except Exception as ex:
