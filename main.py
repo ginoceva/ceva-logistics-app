@@ -1,428 +1,344 @@
 import flet as ft
-import sqlite3
 import pandas as pd
+import sqlite3
 import os
 import shutil
-import unicodedata
-import webbrowser 
-import urllib.parse
 from datetime import datetime
+import requests
 
-# --- CONFIGURACIÓN DE COLORES CORPORATIVOS ---
+# --- CONFIGURACIÓN ---
+DB_NAME = "datos_logistica.db"
+USUARIOS_NAME = "Usuarios.xlsx"
+MASTER_NAME = "Listados maestro EMBALAJES de camiones.xlsx"
 COLOR_AZUL_CEVA = "#002060"
-COLOR_ROJO_CEVA = "#C00000"
-COLOR_VERDE_OK = "#28a745"
-COLOR_FONDO = "#F5F7FA"
+COLOR_FONDO = "#F5F5F5"
 
-# --- MANEJO DE RUTAS PARA ANDROID / PC ---
 def get_base_dir():
-    # Detectamos si estamos en Android
     if os.environ.get("ANDROID_ARGUMENT") or os.environ.get("ANDROID_ROOT"):
-        # El directorio estándar para datos de la app en Android es FILES_DIR
-        # Si no existe, usamos el actual pero expandiendo a una ruta escribible
         p = os.environ.get("FILES_DIR", os.getcwd())
         if p == "/" or p == "/data":
-             # Intento forzar una ruta común si las variables fallan
              return "/data/user/0/com.ceva.logistics/files"
         return p
-    else:
-        return os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(os.path.abspath(__file__))
 
 BASE_DIR = get_base_dir()
-DB_NAME = 'datos_logistica.db'
-USUARIOS_NAME = 'Usuarios.xlsx'
-REPORTE_NAME = 'Reporte_Escaneos.xlsx'
-
 DB_PATH = os.path.join(BASE_DIR, DB_NAME)
 USUARIOS_PATH = os.path.join(BASE_DIR, USUARIOS_NAME)
-REPORTE_PATH = os.path.join(BASE_DIR, REPORTE_NAME)
+MASTER_PATH = os.path.join(BASE_DIR, MASTER_NAME)
+
+# --- ESTADO GLOBAL ---
+class AppState:
+    def __init__(self):
+        self.usuario = ""
+        self.modelo = ""
+        self.truck = ""
+        self.nro_camion = ""
+        self.hu = ""
+        self.reporte_id = ""
+        self.piezas_teoricas = [] # List of tuples (Material, Medio, Modulo, Embalaje)
+        self.escaneos_ok = []
+        self.escaneos_error = []
+        self.ruta_foto_box = ""
+        self.ruta_foto_lista = ""
+
+state = AppState()
 
 def main(page: ft.Page):
-    # --- CONFIGURACIÓN DE LA PÁGINA ---
-    page.title = "CEVA Logistics - Control de Camiones"
-    page.padding = 15
+    page.title = "CEVA Flow"
     page.theme_mode = ft.ThemeMode.LIGHT
+    page.padding = 0
     page.bgcolor = COLOR_FONDO
-    page.scroll = ft.ScrollMode.ADAPTIVE
+    page.window_width = 400
+    page.window_height = 800
 
-    # --- SISTEMA DE LOGS VISUALES ---
+    # --- SISTEMA DE LOGS ---
     class Logger:
-        def __init__(self):
-            self.lines = []
-            self.control = ft.Column(scroll=ft.ScrollMode.ALWAYS, height=100)
         def log(self, text):
-            msg = f"[{datetime.now().strftime('%H:%M:%S')}] {text}"
-            self.lines.append(msg)
-            self.control.controls.append(ft.Text(msg, size=10, font_family="monospace"))
-            print(msg)
-    
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] {text}")
     logger = Logger()
 
-    # --- INICIALIZACIÓN DE ARCHIVOS (Solo en Android) ---
+    # --- INICIALIZACIÓN DE ARCHIVOS ---
     def init_files():
-        logger.log(f"Iniciando init_files. BASE_DIR: {BASE_DIR}")
-        logger.log(f"CWD inicial: {os.getcwd()}")
-        
-        # Si BASE_DIR no es escribible, intentamos crearlo
         if not os.path.exists(BASE_DIR):
-            try:
-                os.makedirs(BASE_DIR, exist_ok=True)
-                logger.log(f"Directorio BASE_DIR creado: {BASE_DIR}")
-            except Exception as e:
-                logger.log(f"ERROR creando BASE_DIR: {e}")
-
+            os.makedirs(BASE_DIR, exist_ok=True)
+            
         if os.environ.get("ANDROID_ARGUMENT") or os.environ.get("ANDROID_ROOT"):
-            logger.log("Entorno ANDROID detectado.")
-            for fname in [DB_NAME, USUARIOS_NAME]:
+            for fname in [DB_NAME, USUARIOS_NAME, MASTER_NAME]:
                 dest = os.path.join(BASE_DIR, fname)
                 if not os.path.exists(dest):
-                    # Intentamos buscar los assets en varias ubicaciones
                     posibles = [
-                        os.path.join(os.getcwd(), fname),
                         os.path.join(os.getcwd(), "assets", fname),
-                        os.path.join(os.path.dirname(__file__), fname),
                         os.path.join(os.path.dirname(__file__), "assets", fname),
-                        os.path.join("/app", fname), # Algunos entornos Flet usan /app
                         os.path.join("/app/assets", fname)
                     ]
-                    encontrado = False
                     for src in posibles:
-                        try:
-                            if os.path.exists(src):
-                                logger.log(f"INFO: Encontrado {fname} en {src}. Copiando a {dest}")
-                                shutil.copy(src, dest)
-                                encontrado = True
-                                break
-                        except Exception as e:
-                            logger.log(f"ERR: Falló copia {fname} desde {src}: {e}")
-                    
-                    if not encontrado:
-                        logger.log(f"¡ADVERTENCIA! No se encontró el origen para {fname}")
-                else:
-                    logger.log(f"OK: {fname} ya existe en {dest}")
-        else:
-            logger.log("INFO: Entorno PC detectado.")
+                        if os.path.exists(src):
+                            shutil.copy(src, dest)
+                            break
 
     init_files()
 
-    # --- ESTADO GLOBAL DE LA APP ---
-    class AppState:
-        def __init__(self):
-            self.usuario = ""
-            self.modelo = ""
-            self.box = ""
-            self.reporte_id = ""
-            self.piezas_teoricas = [] # [(BOX, Material, Medio)]
-            self.piezas_escaneadas = [] # [Material]
-            self.ruta_foto_box = None
-            self.ruta_foto_lista = None
-
-    state = AppState()
-
-    # --- UTILIDADES ---
-    def normalizar(t):
-        if not t: return ""
-        t = str(t).upper().strip()
-        t = unicodedata.normalize('NFKD', t)
-        return "".join([c for c in t if not unicodedata.combining(c)]).replace(" ", "")
-
-    def guardar_en_excel(pieza, carro, resultado):
-        now = datetime.now()
-        data = {
-            "Timestamp": [now.strftime("%Y-%m-%d %H:%M:%S")],
-            "ID_Reporte": [state.reporte_id],
-            "Usuario": [state.usuario],
-            "Modelo": [state.modelo],
-            "BOX": [state.box],
-            "Pieza": [pieza],
-            "Carro_Escaneado": [carro],
-            "Resultado": [resultado]
-        }
-        df_nuevo = pd.DataFrame(data)
+    # --- LÓGICA DE DATOS ---
+    def get_usuarios():
         try:
-            if os.path.exists(REPORTE_PATH):
-                df_old = pd.read_excel(REPORTE_PATH)
-                df_final = pd.concat([df_old, df_nuevo], ignore_index=True)
-                df_final.to_excel(REPORTE_PATH, index=False)
-            else:
-                df_nuevo.to_excel(REPORTE_PATH, index=False)
-        except Exception as e:
-            print(f"Error guardando Excel: {e}")
+            if os.path.exists(USUARIOS_PATH):
+                df = pd.read_excel(USUARIOS_PATH)
+                return df.iloc[:, 0].dropna().tolist()
+            return ["Admin", "Operador 1", "Operador 2"]
+        except: return ["Error al cargar usuarios"]
 
-    # --- COMPONENTES GLOBALES ---
-    # COMENTADO TEMPORALMENTE PARA DEPURAR PANTALLA ROJA
-    # file_picker = ft.FilePicker()
-    # page.overlay.append(file_picker)
+    def get_modelos():
+        try:
+            if os.path.exists(MASTER_PATH):
+                xl = pd.ExcelFile(MASTER_PATH)
+                return [s for s in xl.sheet_names if s not in ["BOM", "Hoja1"]]
+            return ["9.180 TBXSS1", "11.180 - TBETS1", "15190OD"]
+        except: return ["Error al cargar modelos"]
+
+    def load_manifest(modelo):
+        try:
+            if os.path.exists(MASTER_PATH):
+                df = pd.read_excel(MASTER_PATH, sheet_name=modelo)
+                piezas = []
+                # Ajustamos mapeo a las imágenes enviadas
+                # Columnas probables: 'Materialnumber', 'Medio de Abastecimiento', 'Módulo de abastecimiento', 'EMBALAJE PROVEEDOR'
+                for _, row in df.iterrows():
+                    mat = str(row.get('Materialnumber', ''))[:15]
+                    medio = str(row.get('Medio de Abastecimiento', ''))
+                    mod = str(row.get('Módulo de abastecimiento', ''))
+                    emb = str(row.get('EMBALAJE PROVEEDOR', ''))
+                    if mat and mat != 'nan' and mat != '':
+                        piezas.append((mat, medio, mod, emb))
+                return piezas
+            return []
+        except Exception as e:
+            logger.log(f"Error cargando manifest: {e}")
+            return []
 
     # --- PANTALLAS ---
 
     def show_login():
         page.clean()
-        
-        # Cargar datos para dropdowns
-        usuarios = []
-        try:
-            if os.path.exists(USUARIOS_PATH):
-                df = pd.read_excel(USUARIOS_PATH)
-                usuarios = df.iloc[:, 0].dropna().unique().tolist()
-        except: pass
-        if not usuarios: usuarios = ["Cargando..."]
+        usuarios = get_usuarios()
+        modelos = get_modelos()
 
-        modelos = []
-        try:
-            if os.path.exists(DB_PATH):
-                conn = sqlite3.connect(DB_PATH)
-                modelos = [r[0] for r in conn.execute("SELECT DISTINCT ModeloCamion FROM piezas").fetchall()]
-                conn.close()
-        except: pass
-        if not modelos: modelos = ["Sin datos"]
-
-        dd_user = ft.Dropdown(label="Usuario", options=[ft.dropdown.Option(u) for u in usuarios], width=300)
-        dd_model = ft.Dropdown(label="Modelo", options=[ft.dropdown.Option(m) for m in modelos], width=300)
+        dd_user = ft.Dropdown(
+            label="Seleccione su usuario",
+            options=[ft.dropdown.Option(u) for u in usuarios],
+            width=300,
+            border_color=COLOR_AZUL_CEVA,
+            prefix_icon=ft.icons.PERSON_OUTLINE
+        )
+        dd_model = ft.Dropdown(
+            label="Modelo",
+            options=[ft.dropdown.Option(m) for m in modelos],
+            width=300,
+            border_color=COLOR_AZUL_CEVA,
+            prefix_icon=ft.icons.TRUCK_FIELD_OUTLINED
+        )
 
         def login_click(e):
-            # Bypass para depuración: Si no hay selección, usamos valores por defecto o el primero del DB
-            u = dd_user.value if dd_user.value else "Login_Bypass"
-            
-            m = dd_model.value
-            if not m:
-                # Intentamos sacar el primer modelo real de la base de datos si existe
-                try:
-                    if os.path.exists(DB_PATH):
-                        conn = sqlite3.connect(DB_PATH)
-                        res = conn.execute("SELECT DISTINCT ModeloCamion FROM piezas LIMIT 1").fetchone()
-                        conn.close()
-                        if res: m = res[0]
-                except: pass
-            
-            if not m: m = "Modelo_Debug"
-            
-            logger.log(f"Login Bypass: {u} / {m}")
-            state.usuario = u
-            state.modelo = m
-            show_setup()
+            if dd_user.value and dd_model.value:
+                state.usuario = dd_user.value
+                state.modelo = dd_model.value
+                show_setup()
+            else:
+                page.snack_bar = ft.SnackBar(ft.Text("Por favor complete los datos"))
+                page.snack_bar.open = True
+                page.update()
 
         page.add(
             ft.Column([
-                ft.Container(height=40),
-                ft.Image(src="logo_ceva.png", width=180),
                 ft.Container(height=20),
-                ft.Image(src="foto_camiones.jpg", width=350, border_radius=10),
-                ft.Container(height=20),
-                ft.Text("Acceso al Sistema", size=24, weight="bold", color=COLOR_AZUL_CEVA),
+                ft.Image(src="logo_ceva.png", width=150),
+                ft.Image(src="foto_camiones.jpg", width=380, border_radius=10),
+                ft.Container(height=10),
+                ft.Image(src="logo_vw.png", width=100),
+                ft.Text("Seleccione su usuario", weight="bold", color=COLOR_AZUL_CEVA, size=18),
                 dd_user,
+                ft.Container(height=10),
                 dd_model,
-                ft.ElevatedButton("INGRESAR", bgcolor=COLOR_AZUL_CEVA, color="white", width=250, height=50, on_click=login_click),
-                ft.Container(height=20),
-                ft.Image(src="logo_vw.png", width=60),
-                ft.Divider(),
-                ft.Text("DEBUG LOGS:", size=10, weight="bold"),
-                ft.Container(content=logger.control, bgcolor=ft.Colors.BLACK12, padding=5, border_radius=5)
+                ft.Container(height=30),
+                ft.ElevatedButton(
+                    content=ft.Text("Ingresar", size=20, weight="bold", color="white"),
+                    bgcolor=COLOR_AZUL_CEVA,
+                    width=250,
+                    height=60,
+                    on_click=login_click,
+                    style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10))
+                )
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         )
 
     def show_setup():
         page.clean()
-        txt_qr = ft.TextField(label="Escanee Semana (QR)", autofocus=True)
-        txt_box = ft.TextField(label="BOX Detectado", read_only=True, bgcolor=ft.Colors.GREY_100)
-        lbl_status = ft.Text("Esperando escaneo...", size=16, italic=True)
-        btn_start = ft.ElevatedButton("COMENZAR VERIFICACIÓN", disabled=True, bgcolor=COLOR_ROJO_CEVA, color="white", width=300, height=60)
+        state.piezas_teoricas = load_manifest(state.modelo)
+        
+        txt_semana = ft.TextField(label="Semana (QR)", width=200, bgcolor="white", border_radius=5)
+        txt_truck = ft.TextField(label="Truck (Cod. barras)", width=200, bgcolor="white", border_radius=5)
+        txt_camion = ft.TextField(label="Nro de Camión", width=200, bgcolor="white", border_radius=5)
+        txt_hu = ft.TextField(label="HU", width=200, bgcolor="white", border_radius=5)
 
-        def on_qr_change(e):
-            val = txt_qr.value
-            if len(val) >= 3:
-                box = normalizar(val[:3])
-                txt_box.value = box
-                state.box = box
-                # Consultar DB
-                try:
-                    logger.log(f"Consultando DB para Modelo: {state.modelo}, BOX: {box}")
-                    if not os.path.exists(DB_PATH):
-                        logger.log(f"ERROR: No existe DB en {DB_PATH}")
-                    else:
-                        conn = sqlite3.connect(DB_PATH)
-                        res = conn.execute("SELECT Material, Medio FROM piezas WHERE ModeloCamion=? AND BOX=?", (state.modelo, box)).fetchall()
-                        conn.close()
-                        state.piezas_teoricas = res
-                        if res:
-                            lbl_status.value = f"Piezas encontradas: {len(res)}"
-                            lbl_status.color = "green"
-                            btn_start.disabled = False
-                        else:
-                            lbl_status.value = f"⚠️ 0 piezas (Modelo {state.modelo} no coincidio?)"
-                            lbl_status.color = "orange"
-                            btn_start.disabled = True
-                except Exception as ex:
-                    logger.log(f"Error DB: {ex}")
-                    lbl_status.value = "Error al consultar Base de Datos"
-                    lbl_status.color = "red"
-            page.update()
+        table = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("EMBALAJ..")),
+                ft.DataColumn(ft.Text("Material..")),
+                ft.DataColumn(ft.Text("Medio de..")),
+            ],
+            rows=[
+                ft.DataRow(cells=[
+                    ft.DataCell(ft.Text(str(p[3]))),
+                    ft.DataCell(ft.Text(str(p[0]))),
+                    ft.DataCell(ft.Text(str(p[1]))),
+                ]) for p in state.piezas_teoricas[:10]
+            ],
+            column_spacing=15,
+            heading_row_color=ft.colors.with_opacity(0.1, COLOR_AZUL_CEVA),
+            data_row_min_height=40,
+        )
 
-        txt_qr.on_change = on_qr_change
-
-        def pick_file(target):
-            # def handle_result(e):
-            #     if e.files:
-            #         if target == "BOX": state.ruta_foto_box = e.files[0].path
-            #         else: state.ruta_foto_lista = e.files[0].path
-            #         page.snack_bar = ft.SnackBar(ft.Text(f"Foto {target} capturada"))
-            #         page.snack_bar.open = True
-            #         page.update()
-            # file_picker.on_result = handle_result
-            # file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
-            page.snack_bar = ft.SnackBar(ft.Text("Módulo de cámara desactivado por depuración"))
-            page.snack_bar.open = True
-            page.update()
-
-        btn_start.on_click = lambda _: [setattr(state, "reporte_id", f"REP-{datetime.now().strftime('%y%m%d%H%M')}"), show_validation()]
+        def start_click(e):
+            state.truck = txt_truck.value
+            state.nro_camion = txt_camion.value
+            state.hu = txt_hu.value
+            state.reporte_id = f"REP-{datetime.now().strftime('%y%m%d%H%M')}"
+            show_validation()
 
         page.add(
             ft.Column([
-                ft.Text(f"Configuración - {state.modelo}", size=20, weight="bold", color=COLOR_AZUL_CEVA),
-                txt_qr,
-                txt_box,
-                lbl_status,
+                ft.Container(
+                    content=ft.Text(f"Tipo de Camión: {state.modelo}", color="white", weight="bold"),
+                    bgcolor=COLOR_AZUL_CEVA,
+                    padding=10,
+                    width=400
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([ft.Text("Semana (QR)"), txt_semana], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Row([ft.Text("Truck (Cod. barras)"), txt_truck], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Row([ft.Text("Nro de Camion"), txt_camion], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Text("EMBALAJE DE ORIGEN", weight="bold", size=14, color=COLOR_AZUL_CEVA),
+                        ft.Row([ft.Text("HU"), txt_hu], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ]),
+                    padding=15
+                ),
+                ft.Container(
+                    content=ft.Column([table], scroll=ft.ScrollMode.ALWAYS),
+                    height=200,
+                    border=ft.border.all(1, ft.colors.BLACK12),
+                    border_radius=5,
+                    margin=5
+                ),
                 ft.Row([
-                    ft.IconButton(ft.Icons.CAMERA_ALT, on_click=lambda _: pick_file("BOX"), tooltip="Foto BOX", icon_color=COLOR_AZUL_CEVA),
-                    ft.Text("Foto BOX"),
-                    ft.IconButton(ft.Icons.CAMERA_ALT, on_click=lambda _: pick_file("LISTA"), tooltip="Foto Lista", icon_color=COLOR_AZUL_CEVA),
-                    ft.Text("Foto Lista"),
+                    ft.ElevatedButton("Foto BOX", icon=ft.icons.CAMERA_ALT, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=5))),
+                    ft.ElevatedButton("Foto Lista", icon=ft.icons.CAMERA_ALT, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=5))),
                 ], alignment=ft.MainAxisAlignment.CENTER),
-                ft.Container(height=20),
-                btn_start
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                ft.Row([
+                    ft.Container(
+                       content=ft.Column([
+                           ft.Text("Cantidad de piezas a Verificar", color="white", size=10),
+                           ft.Text(str(len(state.piezas_teoricas)), color="white", size=20, weight="bold")
+                       ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                       bgcolor=COLOR_AZUL_CEVA,
+                       padding=10,
+                       border_radius=5,
+                       width=150
+                    ),
+                    ft.ElevatedButton(
+                        "Comenzar la verificación",
+                        bgcolor="red",
+                        color="white",
+                        height=50,
+                        width=200,
+                        on_click=start_click,
+                        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=5))
+                    ),
+                ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
+                ft.IconButton(ft.icons.HOME_OUTLINED, on_click=lambda _: show_login())
+            ], spacing=5, scroll=ft.ScrollMode.AUTO)
         )
 
     def show_validation():
         page.clean()
         
-        txt_pieza = ft.TextField(label="Escanear Pieza", autofocus=True)
-        txt_carro = ft.TextField(label="Escanear Carro", disabled=True)
+        txt_pieza = ft.TextField(label="Pieza", width=250, autofocus=True)
+        txt_medio = ft.TextField(label="Medio", width=250)
         
-        banner_msg = ft.Text("ESCANEE PIEZA", size=22, weight="bold", color="white")
-        banner_container = ft.Container(
-            content=banner_msg,
-            padding=30,
-            alignment=ft.Alignment(0,0),
-            bgcolor=COLOR_AZUL_CEVA,
-            border_radius=10,
-            expand=True
+        banner_instruccion = ft.Container(
+            content=ft.Text("ESCANEE PIEZA", color="white", weight="bold", size=18),
+            bgcolor="gray",
+            padding=15,
+            width=380,
+            alignment=ft.alignment.center,
+            border_radius=5
         )
 
-        expected_medio = {"val": ""}
-
-        def process_pieza(e):
-            p_in = normalizar(txt_pieza.value)
-            if not p_in: return
-
-            found_item = None
-            for item in state.piezas_teoricas:
-                if normalizar(item[0]) == p_in: # item[0] es Material en la consulta
-                    found_item = item
-                    break
-            
-            if found_item:
-                expected_medio["val"] = str(item[1]) # item[1] es Medio
-                banner_msg.value = f"COLOCAR EN:\n{expected_medio['val'].upper()}"
-                banner_container.bgcolor = "green"
-            else:
-                expected_medio["val"] = "NO LISTADA"
-                banner_msg.value = "PIEZA NO LISTADA"
-                banner_container.bgcolor = "orange"
-            
-            txt_pieza.disabled = True
-            txt_carro.disabled = False
-            page.update()
-            txt_carro.focus()
-
-        def process_carro(e):
-            c_in = normalizar(txt_carro.value)
-            p_raw = txt_pieza.value.strip()
-            
-            # Comparación (Si no listada, cualquier carro sirve para confirmar)
-            if expected_medio["val"] == "NO LISTADA" or normalizar(expected_medio["val"]) == c_in:
-                res = "OK" if expected_medio["val"] != "NO LISTADA" else "NO LISTADA"
-                state.piezas_escaneadas.append(p_raw)
-                guardar_en_excel(p_raw, txt_carro.value, res)
-                
-                # Reset
-                txt_pieza.value = ""
-                txt_carro.value = ""
-                txt_pieza.disabled = False
-                txt_carro.disabled = True
-                banner_container.bgcolor = COLOR_AZUL_CEVA
-                banner_msg.value = "SIGUIENTE PIEZA"
+        def scan_pieza(e):
+            codigo = txt_pieza.value
+            match = next((p for p in state.piezas_teoricas if p[0] == codigo), None)
+            if match:
+                banner_instruccion.content.value = f"Colocar en: {match[1]}"
+                banner_instruccion.bgcolor = "red"
                 page.update()
-                txt_pieza.focus()
             else:
-                banner_container.bgcolor = "red"
-                banner_msg.value = f"ERROR\nESPERADO: {expected_medio['val'].upper()}"
-                txt_carro.value = ""
-                # Sonido de error (opcional en web, automático en algunos lectores Android)
+                page.snack_bar = ft.SnackBar(ft.Text("Pieza no encontrada"))
+                page.snack_bar.open = True
                 page.update()
-                txt_carro.focus()
-
-        txt_pieza.on_submit = process_pieza
-        txt_carro.on_submit = process_carro
-
-        def clear_input(tf):
-            tf.value = ""
-            tf.disabled = False
-            if tf == txt_pieza:
-                txt_carro.disabled = True
-                banner_container.bgcolor = COLOR_AZUL_CEVA
-                banner_msg.value = "ESCANEE PIEZA"
-            page.update()
-            tf.focus()
 
         page.add(
             ft.Column([
-                ft.Row([ft.Text(f"BOX: {state.box}", weight="bold"), ft.Spacer(), ft.Text(state.modelo)]),
-                ft.Row([txt_pieza, ft.IconButton(ft.Icons.CLOSE, icon_color="red", on_click=lambda _: clear_input(txt_pieza))]),
-                banner_container,
-                ft.Row([txt_carro, ft.IconButton(ft.Icons.CLOSE, icon_color="red", on_click=lambda _: clear_input(txt_carro))]),
-                ft.ElevatedButton("VER RESUMEN", icon=ft.Icons.LIST_ALT, width=200, on_click=lambda _: show_summary())
-            ], expand=True)
+                ft.Container(
+                    content=ft.Row([
+                        ft.Image(src="logo_ceva.png", width=100),
+                        ft.Text(f"Tipo: {state.modelo}", color=COLOR_AZUL_CEVA, weight="bold")
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=10, bgcolor="white"
+                ),
+                ft.Container(content=ft.Text("Verificador de piezas", color="white", weight="bold"), bgcolor=COLOR_AZUL_CEVA, width=400, padding=10),
+                ft.Container(height=10),
+                ft.Row([txt_pieza, ft.ElevatedButton("LEER", on_click=scan_pieza, bgcolor=COLOR_AZUL_CEVA, color="white")], alignment=ft.MainAxisAlignment.CENTER),
+                ft.ElevatedButton("+ Fotos", color="white", bgcolor="red", width=150),
+                ft.Text("Instrucción de colocado:", weight="bold", color=COLOR_AZUL_CEVA),
+                banner_instruccion,
+                ft.Row([txt_medio, ft.ElevatedButton("LEER", bgcolor=COLOR_AZUL_CEVA, color="white")], alignment=ft.MainAxisAlignment.CENTER),
+                ft.Row([ft.Text("Resultado:"), ft.Icon(ft.icons.CHECK_CIRCLE, color="green")], alignment=ft.MainAxisAlignment.CENTER),
+                ft.Container(height=20),
+                ft.ElevatedButton(
+                    "Resumen de lo escaneado",
+                    bgcolor=COLOR_AZUL_CEVA,
+                    color="white",
+                    width=350,
+                    height=50,
+                    on_click=lambda _: show_summary(),
+                    style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=5))
+                ),
+                ft.IconButton(ft.icons.ARROW_BACK, on_click=lambda _: show_setup())
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         )
 
     def show_summary():
         page.clean()
+        total_t = len(state.piezas_teoricas)
         
-        teoricas_set = set(normalizar(p[0]) for p in state.piezas_teoricas)
-        escaneadas_set = set(normalizar(p) for p in state.piezas_escaneadas)
-        faltantes = [p[0] for p in state.piezas_teoricas if normalizar(p[0]) not in escaneadas_set]
-
-        def send_email(e):
-            asunto = f"Reporte de Escaneo: BOX {state.box} - {state.modelo}"
-            cuerpo = f"Usuario: {state.usuario}\nModelo: {state.modelo}\nBOX: {state.box}\n\n"
-            cuerpo += f"Teoricas: {len(state.piezas_teoricas)}\n"
-            cuerpo += f"Escaneadas: {len(state.piezas_escaneadas)}\n\n"
-            cuerpo += f"FALTANTES:\n" + "\n".join(faltantes)
-            
-            mailto = f"mailto:?subject={urllib.parse.quote(asunto)}&body={urllib.parse.quote(cuerpo)}"
-            webbrowser.open(mailto)
-
         page.add(
-             ft.Column([
-                ft.Text("Resumen de Verificación", size=24, weight="bold"),
+            ft.Column([
+                ft.Container(height=20),
+                ft.Image(src="logo_ceva.png", width=150),
+                ft.Container(height=30),
+                ft.Row([ft.Text("Piezas Teóricas", size=22, weight="bold"), ft.Container(ft.Text(str(total_t), color="white", size=20, weight="bold"), bgcolor=COLOR_AZUL_CEVA, padding=15, border_radius=5)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Row([ft.Text("Piezas Escaneadas", size=22, weight="bold"), ft.Container(ft.Text("0", color="white", size=20, weight="bold"), bgcolor=COLOR_AZUL_CEVA, padding=15, border_radius=5)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Container(height=20),
+                ft.Text("RESULTADO", weight="bold", size=28, color=COLOR_AZUL_CEVA),
+                ft.Container(height=150),
+                ft.Text(f"Hora de Finalización: {datetime.now().strftime('%d %B %Y %H:%M')}", size=14),
                 ft.Row([
-                    ft.Column([ft.Text("Teóricas"), ft.Text(str(len(state.piezas_teoricas)), size=30, weight="bold", color=COLOR_AZUL_CEVA)]),
-                    ft.Column([ft.Text("Escaneadas"), ft.Text(str(len(state.piezas_escaneadas)), size=30, weight="bold", color=COLOR_VERDE_OK)]),
-                ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
-                ft.Divider(),
-                ft.Text("PIEZAS FALTANTES", weight="bold", color="red"),
-                ft.Container(
-                    content=ft.Column([ft.Text(f) for f in faltantes], scroll=ft.ScrollMode.AUTO),
-                    height=200, border=ft.border.all(1, ft.Colors.BLACK12), padding=10, border_radius=5
-                ),
-                ft.Row([
-                    ft.ElevatedButton("ENVIAR CORREO", icon=ft.Icons.EMAIL, on_click=send_email),
-                    ft.ElevatedButton("FINALIZAR OK", bgcolor=COLOR_VERDE_OK, color="white", on_click=lambda _: [guardar_en_excel("FIN", "FIN", "COMPLETO"), show_login()])
-                ], alignment=ft.MainAxisAlignment.CENTER)
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                    ft.ElevatedButton("Enviar Correo", icon=ft.icons.EMAIL, width=160, height=50),
+                    ft.ElevatedButton("VERIFICAR OK", bgcolor=COLOR_AZUL_CEVA, color="white", width=160, height=50)
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.IconButton(ft.icons.ARROW_BACK, on_click=lambda _: show_validation())
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, padding=20)
         )
 
     show_login()
 
-# Ejecución
 ft.app(target=main, assets_dir="assets")
