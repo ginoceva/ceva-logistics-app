@@ -43,8 +43,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          # Intentamos construir sin 'yes |' para ver si realmente hay un prompt o si el comando muere por otra razón
-          flet build apk --project "CEVA_Flow" --org "com.ceva.logistics" --no-version-check
+          flet build apk --project "CEVA_Flow" --org "com.ceva.logistics"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
