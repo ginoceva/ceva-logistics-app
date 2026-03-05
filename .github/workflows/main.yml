@@ -39,17 +39,12 @@ jobs:
           flutter-version: '3.41.4' # Version requested by flet-cli 0.82.0
           channel: 'stable'
 
-      - name: Accept Android Licenses
-        run: |
-          yes | flutter doctor --android-licenses || true
-          yes | sdkmanager --licenses || true
-
       - name: Build APK
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          # Usamos 'yes |' por si acaso, aunque licenciando antes debería ir fluido
-          yes | flet build apk --project "CEVA_Flow" --org "com.ceva.logistics"
+          # Intentamos construir sin 'yes |' para ver si realmente hay un prompt o si el comando muere por otra razón
+          flet build apk --project "CEVA_Flow" --org "com.ceva.logistics" --no-version-check
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
